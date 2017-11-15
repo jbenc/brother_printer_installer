@@ -1,0 +1,59 @@
+#!/bin/bash
+#
+# Copyright (C) 2005-2016 Brother. Industries, Ltd.
+#                                    Ver1.10
+# Sanitized by (c) 2017 Jiri Benc <jbenc@upir.cz>
+
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or (at your option)
+# any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+# more details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+# Place, Suite 330, Boston, MA  02111-1307  USA
+#
+
+printer=@@MODEL@@
+
+[[ -z $PPD ]] && PPD=/usr/share/cups/model/Brother/brother_${printer}_printer_en.ppd
+
+export BRPRINTERRCFILE=/tmp/br${printer}rc_$$
+trap 'rm -f $BRPRINTERRCFILE' EXIT
+
+cp /opt/brother/Printers/$printer/inf/br${printer}rc $BRPRINTERRCFILE
+
+options=$(echo "$5 Copies=1" | \
+	sed -e 's/BrMirror=OFF/MirrorPrint=OFF/' \
+	    -e 's/BrMirror=ON/MirrorPrint=ON/' \
+	    -e 's/BrChain/Chain/' \
+	    -e 's/BrBrightness/Brightness/' \
+	    -e 's/BrContrast/Contrast/' \
+	    -e 's/BrHalfCut/HalfCut/' \
+	    -e 's/BrAutoTapeCut/AutoCut/' \
+	    -e 's/BrHalftonePattern/Halftone/' \
+	    -e 's/Binary/Binary/' \
+	    -e 's/Dither/Dither/' \
+	    -e 's/ErrorDiffusion/ErrorDiffusion/' \
+	    -e 's/BrSheets/Sheets/' \
+	    -e 's/multiple-document-handling/Collate/' \
+	    -e 's/separate-documents-collated-copies/ON/' \
+	    -e 's/separate-documents-uncollated-copies/OFF/')
+
+export PATH=$PATH:/opt/brother/Printers/$printer/bin
+/opt/brother/Printers/$printer/cupswrapper/brcupsconfpt1 ${printer^^} $PPD 0 "$options" $printer $BRPRINTERRCFILE > /dev/null
+
+nup=cat
+if [[ ${5%%=*} = Nup ]]; then
+	cnt=${5#*=}
+	[[ $cnt -ge 1 && -e /usr/bin/psnup ]] && nup="psnup -$cnt"
+fi
+
+f=
+[[ $# -ge 7 ]] && f=$6
+$nup $f | /opt/brother/Printers/$printer/lpd/filter$printer

@@ -1,0 +1,106 @@
+#!/bin/bash
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+
+model=$1
+if [[ -z $model ]]; then
+	echo "Usage: $0 printer_model"
+	echo
+	echo "The printer model has to be specified without dashes."
+	echo "Example: $0 dcp9020cdw"
+	echo
+	echo "Installs Brother MFC/DCP drivers in a sane way. Unlike the vendor"
+	echo "installer, this does not make mess out of your system. Everything"
+	echo "is kept under /opt/brother, system configuration is not touched."
+	echo "A few symlinks are added to cups directories under /usr, their"
+	echo "full list is output at the end."
+	echo
+	echo "This script assumes x86_64. It should be reasonably distro neutral."
+	echo "Note that some of the binaries are 32bit. You're responsible for"
+	echo "installing 32bit versions of glibc and libstdc++."
+	echo
+	echo "On Debian, these would be ia32-libs lib32stdc++6, on Fedora, these"
+	echo "would be glibc.i686 libstdc++.i686."
+	exit 0
+fi
+
+tmpd=$(mktemp -d)
+trap 'cd / ; rm -rf $tmpd' EXIT
+
+# First, download the list of packages from Brother server.
+
+curl -s http://www.brother.com/pub/bsc/linux/infs/${1^^} -o $tmpd/inf || exit 1
+
+pkg1=$(sed -n 's/^PRN_CUP_DEB=\(.*\)$/\1/p' $tmpd/inf)
+pkg2=$(sed -n 's/^PRN_LPD_DEB=\(.*\)$/\1/p' $tmpd/inf)
+
+if [[ -z $pkg1 ]]; then
+	echo "Your printer model was not found."
+	echo "Try models with a different suffix or other similar models."
+	exit 1
+fi
+
+# Process and copy our files to the temp location.
+
+sed "s/@@MODEL@@/$model/g" brother_lpdwrapper > $tmpd/brother_lpdwrapper_$model
+
+# Download and extract the packages.
+
+function download_and_extract()
+{
+	curl -s http://www.brother.com/pub/bsc/linux/packages/$1 -o $1
+	mkdir unpack
+	cd unpack
+	ar x ../$1
+	cd ../tree
+	tar -x --no-same-owner --no-same-permissions -f ../unpack/data.tar.*
+	cd ..
+	rm -rf unpack
+}
+
+cd $tmpd
+mkdir tree
+echo "Downloading and extracting packages."
+download_and_extract $pkg1
+download_and_extract $pkg2
+
+# Detect where the libraries should be.
+
+function find_first()
+{
+	while [[ -n $1 ]]; do
+		[[ -d $1 ]] && { echo "$1"; return 0; }
+		shift
+	done
+	echo "Could not find cups libraries." >&2
+	return 1
+}
+
+libpath=$(find_first /usr/lib64/cups/filter /usr/lib/cups/filter /usr/libexec/cups/filter) || exit 1
+
+# Move stuff to opt...
+
+cd tree
+mv usr/bin opt/brother/Printers/$model/
+chmod 755 ../brother_lpdwrapper_$model
+mv ../brother_lpdwrapper_$model opt/brother/Printers/$model/
+
+# ...and move it to the live system.
+
+mkdir -p /opt/brother/Printers || exit 1
+mv opt/brother/Printers/$model /opt/brother/Printers/ || exit 1
+cd ..
+
+# Create the needed symlinks.
+
+mkdir -p /usr/share/cups/model/Brother
+ln -s /opt/brother/Printers/$model/cupswrapper/brother_${model}_printer_en.ppd /usr/share/cups/model/Brother/
+ln -s /opt/brother/Printers/$model/brother_lpdwrapper_$model $libpath/
+
+# Echo the symlinks.
+
+echo "Symlinks created:"
+echo /usr/share/cups/model/Brother/brother_${model}_printer_en.ppd
+echo $libpath/brother_lpdwrapper_$model
