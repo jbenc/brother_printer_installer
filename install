@@ -42,9 +42,9 @@ if [[ -z $pkg1 ]]; then
 	exit 1
 fi
 
-# Process and copy our files to the temp location.
+# Copy our files to the temp location.
 
-sed "s/@@MODEL@@/$model/g" brother_lpdwrapper > $tmpd/brother_lpdwrapper_$model
+cp brother_lpdwrapper* $tmpd/
 
 # Download and extract the packages.
 
@@ -66,9 +66,19 @@ echo "Downloading and extracting packages."
 download_and_extract $pkg1
 download_and_extract $pkg2
 
+# Find the expected name of the printer (lower case vs. upper case).
+
+if [[ ! -d tree/opt/brother/Printers/$model ]]; then
+	model=${model^^}
+	if [[ ! -d tree/opt/brother/Printers/$model ]]; then
+		echo "Could not find the expected files in the downloaded packages." >&2
+		exit 1
+	fi
+fi
+
 # Detect where the libraries should be.
 
-function find_first()
+function find_first_cups()
 {
 	while [[ -n $1 ]]; do
 		[[ -d $1 ]] && { echo "$1"; return 0; }
@@ -78,16 +88,54 @@ function find_first()
 	return 1
 }
 
-libpath=$(find_first /usr/lib64/cups/filter /usr/lib/cups/filter /usr/libexec/cups/filter) || exit 1
+libpath=$(find_first_cups /usr/lib64/cups/filter /usr/lib/cups/filter /usr/libexec/cups/filter) || exit 1
 
 # Move stuff to opt...
 
 cd tree
-mv usr/bin opt/brother/Printers/$model/
-chmod 755 ../brother_lpdwrapper_$model
-mv ../brother_lpdwrapper_$model opt/brother/Printers/$model/
+[[ -d usr/bin ]] && mv usr/bin opt/brother/Printers/$model/
 
-# ...and move it to the live system.
+# ...find and process the right lpdwrapper...
+
+wrapper_path=opt/brother/Printers/$model/cupswrapper
+
+function find_wrapper()
+{
+	while [[ -n $1 ]]; do
+		name=${1##*/brother_lpdwrapper_}
+		[[ -f $wrapper_path/brcupsconf$name ]] && { echo $1; return 0; }
+		shift
+	done
+	echo "Could not find a supported cupswrapper." >&2
+	return 1
+}
+
+wrapper=$(find_wrapper $tmpd/brother_lpdwrapper_*) || exit 1
+
+wrapper_dest=opt/brother/Printers/$model/brother_lpdwrapper_$model
+sed "s/@@MODEL@@/$model/g" $wrapper > $wrapper_dest
+chmod 755 $wrapper_dest
+
+# ...find the ppd name...
+
+ppd=
+for f in opt/brother/Printers/$model/cupswrapper/brother?${model}*; do
+	[[ -e $f ]] || break
+	if [[ -n $ppd ]]; then
+		echo "Error: multiple ppd files found:" >&2
+		cd opt/brother/Printers/$model/cupswrapper/
+		ls brother_${model}* >&2
+		exit 1
+	fi
+	ppd=$f
+done
+if [[ -z $ppd ]]; then
+	echo "Error: no ppd file found in the downloaded packages." >&2
+	exit 1
+fi
+ppd=${ppd##*/}
+
+# ...and move the files to the live system.
 
 mkdir -p /opt/brother/Printers || exit 1
 mv opt/brother/Printers/$model /opt/brother/Printers/ || exit 1
@@ -96,11 +144,11 @@ cd ..
 # Create the needed symlinks.
 
 mkdir -p /usr/share/cups/model/Brother
-ln -s /opt/brother/Printers/$model/cupswrapper/brother_${model}_printer_en.ppd /usr/share/cups/model/Brother/
+ln -s /opt/brother/Printers/$model/cupswrapper/$ppd /usr/share/cups/model/Brother/${model}.ppd
 ln -s /opt/brother/Printers/$model/brother_lpdwrapper_$model $libpath/
 
 # Echo the symlinks.
 
 echo "Symlinks created:"
-echo /usr/share/cups/model/Brother/brother_${model}_printer_en.ppd
+echo /usr/share/cups/model/Brother/${model}.ppd
 echo $libpath/brother_lpdwrapper_$model

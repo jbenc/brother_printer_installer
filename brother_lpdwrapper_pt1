@@ -21,7 +21,7 @@
 
 printer=@@MODEL@@
 
-[[ -z $PPD ]] && PPD=/usr/share/cups/model/Brother/brother_${printer}_printer_en.ppd
+[[ -z $PPD ]] && PPD=/usr/share/cups/model/Brother/${printer}.ppd
 
 export BRPRINTERRCFILE=/tmp/br${printer}rc_$$
 trap 'rm -f $BRPRINTERRCFILE' EXIT
