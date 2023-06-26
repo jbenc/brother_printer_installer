@@ -34,7 +34,7 @@ trap 'cd / ; rm -rf $tmpd' EXIT
 
 # First, download the list of packages from Brother server.
 
-curl -s http://www.brother.com/pub/bsc/linux/infs/${1^^} -o $tmpd/inf || exit 1
+curl -sL http://www.brother.com/pub/bsc/linux/infs/${1^^} -o $tmpd/inf || exit 1
 
 pkg1=$(sed -n 's/^PRN_CUP_DEB=\(.*\)$/\1/p' $tmpd/inf)
 pkg2=$(sed -n 's/^PRN_LPD_DEB=\(.*\)$/\1/p' $tmpd/inf)
@@ -53,7 +53,7 @@ cp brother_lpdwrapper* $tmpd/
 
 function download_and_extract()
 {
-	curl -s http://www.brother.com/pub/bsc/linux/packages/$1 -o $1
+	curl -sL http://www.brother.com/pub/bsc/linux/packages/$1 -o $1
 	mkdir unpack
 	cd unpack
 	ar x ../$1
